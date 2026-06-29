@@ -9,6 +9,68 @@ Includes a **Groq-powered LLM agent** and a browser **inbox UI**. You ask a weat
 ## Architecture Diagram
 
 ```mermaid
+<<<<<<< HEAD
+flowchart LR
+    classDef browser fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:1.5px;
+    classDef agent fill:#ede9fe,stroke:#7c3aed,color:#0f172a,stroke-width:1.5px;
+    classDef mcp fill:#dcfce7,stroke:#16a34a,color:#0f172a,stroke-width:1.5px;
+    classDef api fill:#fef3c7,stroke:#d97706,color:#0f172a,stroke-width:1.5px;
+    classDef store fill:#f8fafc,stroke:#64748b,color:#0f172a,stroke-width:1px;
+
+    subgraph Browser["Browser UI - index.html :8080"]
+        Q["User asks weather question"]:::browser
+        H["GET /health"]:::browser
+        C["POST /chat { question }"]:::browser
+        R["Render tool_used + HTML answer"]:::browser
+    end
+
+    subgraph Agent["Groq Agent - agent.py :8001"]
+        A1["FastAPI routes"]:::agent
+        A2["MCP SSE client"]:::agent
+        A3["Groq call #1<br/>pick best tool + extract city"]:::agent
+        A4["Groq call #2<br/>format final HTML answer"]:::agent
+    end
+
+    subgraph MCP["Weather MCP Server - server.py :8000"]
+        M0["SSE endpoint /sse"]:::mcp
+        M1["open_meteo_geocode"]:::mcp
+        M2["open_meteo_current"]:::mcp
+        M3["open_meteo_forecast"]:::mcp
+        M4["open_meteo_air_quality"]:::mcp
+        M5["open_meteo_historical"]:::mcp
+    end
+
+    subgraph OpenMeteo["Open-Meteo provider"]
+        E1["/v1/search"]:::api
+        E2["/v1/forecast<br/>current weather"]:::api
+        E3["/v1/forecast<br/>5-day forecast"]:::api
+        E4["/v1/air-quality"]:::api
+        E5["/v1/archive"]:::api
+    end
+
+    K[".env<br/>GROQ_API_KEY<br/>MCP_SSE_URL"]:::store
+
+    Q --> C
+    H --> A1
+    C --> A1
+    A1 --> A2
+    A1 --> A3
+    A3 -->|"tool choice + city"| A2
+    A2 -->|"list_tools() + call_tool()"| M0
+    M0 --> M1
+    M0 --> M2
+    M0 --> M3
+    M0 --> M4
+    M0 --> M5
+    M1 --> E1
+    M2 --> E2
+    M3 --> E3
+    M4 --> E4
+    M5 --> E5
+    M0 -->|"HTML tool result"| A4
+    A4 -->|"tool_used + html"| R
+    K --> A1
+=======
 flowchart TB
     subgraph Browser["Browser — index.html (port 8080)"]
         UI[Weather Inbox]
@@ -60,6 +122,7 @@ flowchart TB
     T5 --> E5
     Chat -->|"{ tool_used, html }"| ToolBar
     Chat --> Answer
+>>>>>>> 0ba0528254102c38fa5a69efe8c4d7417de8fcf5
 ```
 
 ---
@@ -68,6 +131,37 @@ flowchart TB
 
 ```mermaid
 sequenceDiagram
+<<<<<<< HEAD
+    autonumber
+    participant U as Browser UI
+    participant AG as agent.py
+    participant G as Groq
+    participant M as server.py
+    participant O as Open-Meteo
+
+    U->>AG: GET /health
+    AG->>M: list_tools() over SSE
+    M-->>AG: 5 available open_meteo_* tools
+    AG-->>U: agent ok, MCP status, Groq configured
+
+    U->>AG: POST /chat {question}
+    AG->>M: list_tools() over SSE
+    M-->>AG: tool schemas
+    AG->>G: Question + tool schemas
+    G-->>AG: Selected tool + city args
+    AG->>M: call_tool(tool_name, {city})
+    M->>O: HTTP GET to chosen endpoint
+    O-->>M: live JSON weather data
+    M-->>AG: HTML tool result
+    AG->>G: User question + tool name + tool HTML
+    G-->>AG: final HTML answer
+    AG-->>U: { tool_used, html }
+    U->>U: Show tool bar and answer card
+```
+
+---
+
+=======
     participant U as User (Browser)
     participant A as Agent (Groq)
     participant M as MCP Server
@@ -88,6 +182,7 @@ sequenceDiagram
 
 ---
 
+>>>>>>> 0ba0528254102c38fa5a69efe8c4d7417de8fcf5
 ## The 5 Tools — One Provider, Five Endpoints
 
 | # | MCP Tool | Open-Meteo Endpoint | What it returns |
