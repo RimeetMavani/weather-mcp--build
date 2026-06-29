@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weather MCP Tester</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --border: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --success: #22c55e;
+      --error: #ef4444;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    header h1 {
+      margin: 0 0 0.5rem;
+      font-size: 2rem;
+      background: linear-gradient(90deg, #38bdf8, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    header p { color: var(--muted); margin: 0; }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .panel h2 {
+      margin: 0 0 1rem;
+      font-size: 1rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--error);
+    }
+
+    .dot.connected { background: var(--success); }
+
+    .prompts {
+      display: flex;  
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .prompt-btn {
+      text-align: left;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      font-size: 0.95rem;
+    }
+
+    .prompt-btn:hover {
+      border-color: var(--accent);
+      background: #1e293b;
+    }
+
+    .prompt-btn small {
+      display: block;
+      color: var(--muted);
+      margin-top: 0.25rem;
+      font-size: 0.8rem;
+    }
+
+    .form-row {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    input, select {
+      flex: 1;
+      min-width: 160px;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #0f172a;
+      color: var(--text);
+      font-size: 1rem;
+    }
+
+    button.primary {
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #0f172a;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background 0.2s;
+    }
+
+    button.primary:hover { background: var(--accent-hover); }
+    button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    #output {
+      min-height: 120px;
+    }
+
+    #output .placeholder {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    #output .loading {
+      color: var(--accent);
+    }
+
+    /* Styles for MCP tool HTML responses */
+    #output .weather-card {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      margin-top: 0.5rem;
+    }
+
+    #output .weather-card.error {
+      border-color: var(--error);
+    }
+
+    #output .weather-card.ok {
+      border-color: var(--success);
+    }
+
+    #output .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+
+    #output .card-header h3 {
+      margin: 0;
+      font-size: 1.1rem;
+    }
+
+    #output .badge {
+      background: #334155;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    #output .city {
+      color: var(--accent);
+      margin: 0 0 0.75rem;
+    }
+
+    #output table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    #output th, #output td {
+      text-align: left;
+      padding: 0.4rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #output th {
+      color: var(--muted);
+      width: 40%;
+      font-weight: 500;
+    }
+
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Weather MCP Tester</h1>
+      <p>Connects to <code>http://127.0.0.1:8000/sse</code> via MCP JavaScript SDK</p>
+    </header>
+
+    <div class="panel">
+      <h2>Connection</h2>
+      <div class="status">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText">Disconnected — start server.py first</span>
+      </div>
+      <div style="margin-top: 1rem;">
+        <button class="primary" id="connectBtn">Connect to MCP Server</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Suggested Test Prompts (click to run)</h2>
+      <div class="prompts" id="promptList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Custom Query</h2>
+      <div class="form-row">
+        <input type="text" id="cityInput" placeholder="Enter city name (e.g. Mumbai)" value="London" />
+        <select id="toolSelect">
+          <option value="weather_open_meteo">Open-Meteo (no key)</option>
+          <option value="weather_wttr">wttr.in (no key)</option>
+          <option value="weather_7timer">7Timer! (no key)</option>
+          <option value="weather_openweather">OpenWeatherMap (key)</option>
+          <option value="weather_weatherapi">WeatherAPI.com (key)</option>
+        </select>
+        <button class="primary" id="callBtn" disabled>Call Tool</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Result (HTML output from MCP)</h2>
+      <div id="output"><p class="placeholder">Results will appear here after calling a tool.</p></div>
+    </div>
+
+    <footer>
+      5 tools · 5 live weather APIs · SSE transport · Press Ctrl+C in the server terminal to stop MCP
+    </footer>
+  </div>
+
+  <script type="module">
+    import { Client } from "https://esm.sh/@modelcontextprotocol/sdk@1.12.1/client/index.js";
+    import { SSEClientTransport } from "https://esm.sh/@modelcontextprotocol/sdk@1.12.1/client/sse.js";
+
+    const MCP_URL = "http://127.0.0.1:8000/sse";
+
+    const TEST_PROMPTS = [
+      {
+        label: "London weather via Open-Meteo",
+        tool: "weather_open_meteo",
+        city: "London",
+        api: "api.open-meteo.com (no key)",
+      },
+      {
+        label: "Tokyo temperature via wttr.in",
+        tool: "weather_wttr",
+        city: "Tokyo",
+        api: "wttr.in (no key)",
+      },
+      {
+        label: "Paris astronomical forecast via 7Timer!",
+        tool: "weather_7timer",
+        city: "Paris",
+        api: "7timer.info (no key)",
+      },
+      {
+        label: "New York weather via OpenWeatherMap",
+        tool: "weather_openweather",
+        city: "New York",
+        api: "openweathermap.org (free key)",
+      },
+      {
+        label: "Sydney weather via WeatherAPI.com",
+        tool: "weather_weatherapi",
+        city: "Sydney",
+        api: "weatherapi.com (free key)",
+      },
+    ];
+
+    let client = null;
+    let transport = null;
+
+    const statusDot = document.getElementById("statusDot");
+    const statusText = document.getElementById("statusText");
+    const connectBtn = document.getElementById("connectBtn");
+    const callBtn = document.getElementById("callBtn");
+    const cityInput = document.getElementById("cityInput");
+    const toolSelect = document.getElementById("toolSelect");
+    const output = document.getElementById("output");
+    const promptList = document.getElementById("promptList");
+
+    function setConnected(connected) {
+      statusDot.classList.toggle("connected", connected);
+      statusText.textContent = connected
+        ? "Connected to MCP server"
+        : "Disconnected — start server.py first";
+      connectBtn.textContent = connected ? "Disconnect" : "Connect to MCP Server";
+      callBtn.disabled = !connected;
+    }
+
+    function showLoading(message) {
+      output.innerHTML = `<p class="loading">${message}</p>`;
+    }
+
+    function extractHtml(result) {
+      if (result.content && result.content.length > 0) {
+        const part = result.content[0];
+        if (part.type === "text") return part.text;
+      }
+      return "<p>No content returned.</p>";
+    }
+
+    async function callTool(toolName, city) {
+      if (!client) {
+        output.innerHTML = '<p class="placeholder">Connect to the MCP server first.</p>';
+        return;
+      }
+
+      showLoading(`Calling <strong>${toolName}</strong> for <strong>${city}</strong>…`);
+
+      try {
+        const result = await client.callTool({
+          name: toolName,
+          arguments: { city },
+        });
+
+        if (result.isError) {
+          output.innerHTML = `<div class="weather-card error"><p>Error from tool.</p><pre>${JSON.stringify(result, null, 2)}</pre></div>`;
+          return;
+        }
+
+        output.innerHTML = extractHtml(result);
+      } catch (err) {
+        output.innerHTML = `<div class="weather-card error"><h3>Request Failed</h3><p>${err.message}</p></div>`;
+      }
+    }
+
+    async function connect() {
+      if (client) {
+        try {
+          await client.close();
+        } catch (_) { /* ignore */ }
+        client = null;
+        transport = null;
+        setConnected(false);
+        return;
+      }
+
+      try {
+        showLoading("Connecting to MCP server…");
+        client = new Client({ name: "weather-web-client", version: "1.0.0" });
+        transport = new SSEClientTransport(new URL(MCP_URL));
+        await client.connect(transport);
+        setConnected(true);
+        output.innerHTML = '<p class="placeholder">Connected! Click a test prompt or enter a city and call a tool.</p>';
+      } catch (err) {
+        client = null;
+        transport = null;
+        setConnected(false);
+        output.innerHTML = `<div class="weather-card error"><h3>Connection Failed</h3><p>${err.message}</p><p>Make sure <code>python server.py</code> is running on port 8000.</p></div>`;
+      }
+    }
+
+    TEST_PROMPTS.forEach((prompt) => {
+      const btn = document.createElement("button");
+      btn.className = "prompt-btn";
+      btn.innerHTML = `${prompt.label}<small>Tool: ${prompt.tool} · API: ${prompt.api}</small>`;
+      btn.addEventListener("click", () => {
+        cityInput.value = prompt.city;
+        toolSelect.value = prompt.tool;
+        callTool(prompt.tool, prompt.city);
+      });
+      promptList.appendChild(btn);
+    });
+
+    connectBtn.addEventListener("click", connect);
+    callBtn.addEventListener("click", () => {
+      const city = cityInput.value.trim();
+      const tool = toolSelect.value;
+      if (!city) {
+        output.innerHTML = '<div class="weather-card error"><p>Please enter a city name.</p></div>';
+        return;
+      }
+      callTool(tool, city);
+    });
+  </script>
+</body>
+</html>
