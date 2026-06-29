@@ -1,6 +1,8 @@
 # Weather MCP Server
 
-A **Model Context Protocol (MCP)** server built with [fastmcp](https://gofastmcp.com) that exposes **exactly 5 weather tools**, each calling a different **live public weather API**. Includes a **Groq-powered LLM agent** and a browser **inbox UI** — you ask a weather question in plain English, the LLM picks the right MCP tool, and returns an HTML answer.
+A **Model Context Protocol (MCP)** server built with [fastmcp](https://gofastmcp.com) that exposes **exactly 5 weather tools** from **one API provider** ([Open-Meteo](https://open-meteo.com/)) — each tool calls a **different endpoint** on that provider.
+
+Includes a **Groq-powered LLM agent** and a browser **inbox UI**. You ask a weather question in plain English; the LLM picks the right Open-Meteo endpoint tool, calls it, and returns an HTML answer. The UI shows **which MCP tool was actually called** for each query.
 
 ---
 
@@ -8,73 +10,108 @@ A **Model Context Protocol (MCP)** server built with [fastmcp](https://gofastmcp
 
 ```mermaid
 flowchart TB
-    subgraph Browser["Browser (port 8080)"]
-        UI[index.html — LLM Inbox]
+    subgraph Browser["Browser — index.html (port 8080)"]
+        UI[Weather Inbox]
+        Status[System Status\nagent · MCP · LLM]
+        ToolBar["Tool Called Bar\n(open_meteo_*)"]
+        Answer[HTML Answer Card]
+        UI --> Status
+        UI --> ToolBar
+        UI --> Answer
     end
 
-    subgraph Agent["LLM Agent (port 8001)"]
-        API["/chat · /health"]
+    subgraph Agent["LLM Agent — agent.py (port 8001)"]
+        Health["GET /health"]
+        Chat["POST /chat"]
         GROQ[Groq LLM]
         MCPClient[MCP Client]
-        API --> GROQ
-        API --> MCPClient
-        GROQ -->|pick tool + format HTML| API
+        Chat --> GROQ
+        Chat --> MCPClient
+        GROQ -->|"1. pick tool"| MCPClient
+        MCPClient -->|"2. tool HTML"| GROQ
+        GROQ -->|"3. format answer"| Chat
     end
 
-    subgraph MCP["MCP Server (port 8000)"]
-        SSE[SSE Endpoint /sse]
-        T1[weather_open_meteo]
-        T2[weather_wttr]
-        T3[weather_7timer]
-        T4[weather_openweather]
-        T5[weather_weatherapi]
+    subgraph MCP["MCP Server — server.py (port 8000)"]
+        SSE["SSE /sse"]
+        T1[open_meteo_geocode]
+        T2[open_meteo_current]
+        T3[open_meteo_forecast]
+        T4[open_meteo_air_quality]
+        T5[open_meteo_historical]
         SSE --> T1 & T2 & T3 & T4 & T5
     end
 
-    subgraph APIs["Live Weather APIs"]
-        A1[Open-Meteo\nno key]
-        A2[wttr.in\nno key]
-        A3[7Timer!\nno key]
-        A4[OpenWeatherMap\nfree key]
-        A5[WeatherAPI.com\nfree key]
+    subgraph OpenMeteo["Open-Meteo — one provider, five endpoints"]
+        E1["geocoding-api…/v1/search"]
+        E2["api…/v1/forecast — current"]
+        E3["api…/v1/forecast — daily"]
+        E4["air-quality-api…/v1/air-quality"]
+        E5["archive-api…/v1/archive"]
     end
 
-    UI -->|POST /chat| API
+    UI -->|"POST /chat { question }"| Chat
+    UI -->|"GET /health"| Health
     MCPClient -->|SSE| SSE
-    T1 --> A1
-    T2 --> A2
-    T3 --> A3
-    T4 --> A4
-    T5 --> A5
-    T1 & T2 & T3 & T4 & T5 -->|HTML| MCPClient
-    API -->|HTML response| UI
+    T1 --> E1
+    T2 --> E2
+    T3 --> E3
+    T4 --> E4
+    T5 --> E5
+    Chat -->|"{ tool_used, html }"| ToolBar
+    Chat --> Answer
 ```
 
 ---
 
-## The 5 Tools & APIs
+## Query Flow
 
-| # | MCP Tool | Weather API | API Key Required? |
-|---|----------|-------------|-------------------|
-| 1 | `weather_open_meteo` | [Open-Meteo](https://open-meteo.com/) | No |
-| 2 | `weather_wttr` | [wttr.in](https://wttr.in/) | No |
-| 3 | `weather_7timer` | [7Timer!](https://www.7timer.info/) | No |
-| 4 | `weather_openweather` | [OpenWeatherMap](https://openweathermap.org/api) | Yes (free tier) |
-| 5 | `weather_weatherapi` | [WeatherAPI.com](https://www.weatherapi.com/) | Yes (free tier) |
+```mermaid
+sequenceDiagram
+    participant U as User (Browser)
+    participant A as Agent (Groq)
+    participant M as MCP Server
+    participant O as Open-Meteo API
+
+    U->>A: POST /chat — weather question
+    A->>M: list_tools (SSE)
+    M-->>A: 5 open_meteo_* tools
+    A->>A: Groq picks best tool + city
+    A->>M: call_tool(open_meteo_*, city)
+    M->>O: HTTP GET (one endpoint)
+    O-->>M: live JSON data
+    M-->>A: HTML tool result
+    A->>A: Groq formats final HTML
+    A-->>U: tool_used + html
+    U->>U: Show tool name bar + answer
+```
+
+---
+
+## The 5 Tools — One Provider, Five Endpoints
+
+| # | MCP Tool | Open-Meteo Endpoint | What it returns |
+|---|----------|---------------------|-----------------|
+| 1 | `open_meteo_geocode` | `geocoding-api.open-meteo.com/v1/search` | Coordinates, timezone, region |
+| 2 | `open_meteo_current` | `api.open-meteo.com/v1/forecast` | Current temp, humidity, wind, conditions |
+| 3 | `open_meteo_forecast` | `api.open-meteo.com/v1/forecast` | 5-day daily high/low, rain |
+| 4 | `open_meteo_air_quality` | `air-quality-api.open-meteo.com/v1/air-quality` | AQI, PM2.5, PM10, ozone |
+| 5 | `open_meteo_historical` | `archive-api.open-meteo.com/v1/archive` | Yesterday's min/max temp, conditions |
+
+All 5 tools use **Open-Meteo only** — free, no weather API key required.
 
 ### API Keys
 
 | Key | Required for | Sign up |
 |-----|--------------|---------|
 | `GROQ_API_KEY` | LLM inbox UI (`agent.py`) | https://console.groq.com/keys (free tier) |
-| `OPENWEATHER_API_KEY` | Tool 4 only (optional) | https://openweathermap.org/api |
-| `WEATHERAPI_KEY` | Tool 5 only (optional) | https://www.weatherapi.com/signup.aspx |
 
-Tools 1–3 work with no keys. For the inbox UI, **Groq is required**. Weather keys for tools 4–5 are optional — the LLM will pick from whichever tools are available.
+Weather tools need **no API key**. Only Groq is required for the inbox UI.
 
-1. Copy `.env.example` to `.env`
-2. Add your `GROQ_API_KEY` (required for inbox)
-3. Optionally add weather API keys for tools 4–5
+```bash
+copy .env.example .env
+# Edit .env — add GROQ_API_KEY
+```
 
 ---
 
@@ -88,12 +125,11 @@ cd weather-mcp--build
 pip install -r requirements.txt
 ```
 
-### 2. Configure API keys
+### 2. Configure Groq API key
 
 ```bash
 copy .env.example .env
-# Edit .env — add GROQ_API_KEY (free tier, required for LLM inbox)
-# Optionally add free weather API keys for tools 4–5
+# Edit .env — add GROQ_API_KEY (required for LLM inbox)
 ```
 
 ### 3. Start the MCP server (SSE on port 8000)
@@ -102,7 +138,7 @@ copy .env.example .env
 python server.py
 ```
 
-You should see output like:
+You should see:
 
 ```
 Starting MCP server 'Weather MCP Server' with transport 'sse' on http://127.0.0.1:8000/sse
@@ -118,8 +154,6 @@ Open a **second terminal**:
 python agent.py
 ```
 
-The agent lists MCP tools, lets the Groq LLM pick one for your question, calls the tool, and returns an HTML answer.
-
 ### 5. Serve the HTML inbox UI (port 8080)
 
 Open a **third terminal**:
@@ -133,22 +167,41 @@ python -m http.server 8080
 Go to: **http://localhost:8080/index.html**
 
 1. Wait for status dots to turn green (agent, MCP, LLM)
-2. Type a weather question in the **inbox** (no tool dropdown — the LLM chooses)
-3. View the **HTML-formatted** LLM response
+2. Type a weather question or click a suggested question
+3. After each query, the **MCP tool called** bar shows the exact tool the LLM picked (e.g. `open_meteo_forecast`) and its endpoint
+4. View the **HTML-formatted** answer below
+
+---
+
+## Inbox UI — Dynamic Tool Display
+
+The UI does **not** show a fixed tool name before you ask. After each query:
+
+| UI element | What it shows |
+|------------|---------------|
+| **Tool called bar** | Exact MCP tool name + Open-Meteo endpoint used for *this* query |
+| **HTML answer card** | Groq-formatted weather answer (badge shows the specific tool name) |
+| **Suggested questions** | Plain questions only — no pre-assigned tool labels |
+
+Example after asking *"Give me the 5-day forecast for Tokyo"*:
+
+```
+MCP tool called:  open_meteo_forecast  →  api.open-meteo.com/v1/forecast
+```
 
 ---
 
 ## 5 Suggested Inbox Questions
 
-These match the clickable prompts in `index.html`. The LLM picks the tool — you do not select one manually.
-
-| Question | Expected tool (LLM may vary) |
+| Question | Tool the LLM typically picks |
 |----------|------------------------------|
-| What's the weather in London? | Open-Meteo or wttr.in |
-| How hot is it in Tokyo right now? | Temperature-focused tool |
-| Is it good stargazing weather in Paris tonight? | 7Timer! |
-| Tell me about the weather in New York | OpenWeatherMap (if key set) |
-| What's the humidity and wind like in Sydney? | Best matching tool |
+| What's the weather in London right now? | `open_meteo_current` |
+| Give me the 5-day forecast for Tokyo | `open_meteo_forecast` |
+| What's the air quality in Paris? | `open_meteo_air_quality` |
+| What were the coordinates and timezone for New York? | `open_meteo_geocode` |
+| How was the weather in Sydney yesterday? | `open_meteo_historical` |
+
+The actual tool chosen is shown in the UI after each query — the LLM may pick a different tool if it fits the question better.
 
 ---
 
@@ -160,7 +213,7 @@ With `server.py` running in another terminal:
 python test_client.py
 ```
 
-This connects via SSE, lists tools, calls all 5 with live data, prints previews, then closes the connection. This tests the MCP server directly — no Groq agent needed.
+Connects via SSE, lists all 5 tools, calls each with a live city, and prints a pass/fail summary. No Groq agent needed for this test.
 
 ---
 
@@ -168,18 +221,28 @@ This connects via SSE, lists tools, calls all 5 with live data, prints previews,
 
 | File | Purpose |
 |------|---------|
-| `server.py` | MCP server — 5 weather tools, SSE transport |
-| `agent.py` | Groq LLM agent — picks MCP tool, returns HTML answer |
-| `index.html` | Inbox UI — ask weather questions via agent on port 8001 |
-| `test_client.py` | Python script to test all 5 MCP tools from the terminal |
+| `server.py` | MCP server — 5 Open-Meteo endpoint tools, SSE transport |
+| `agent.py` | Groq LLM agent — picks MCP tool, returns `tool_used` + HTML |
+| `index.html` | Inbox UI — status panel, dynamic tool bar, HTML answers |
+| `test_client.py` | Terminal script to test all 5 MCP tools directly |
 | `requirements.txt` | Python dependencies |
-| `.env.example` | Template for API keys (Groq + optional weather keys) |
+| `.env.example` | Template for Groq API key |
+
+---
+
+## Ports Summary
+
+| Port | Service | Command |
+|------|---------|---------|
+| 8000 | MCP server (SSE) | `python server.py` |
+| 8001 | Groq LLM agent | `python agent.py` |
+| 8080 | Browser UI | `python -m http.server 8080` |
 
 ---
 
 ## End Testing
 
 1. Close the browser tab
-2. Stop the HTML server: `Ctrl+C` in the http.server terminal
-3. Stop the agent: `Ctrl+C` in the agent.py terminal
-4. Stop the MCP server: `Ctrl+C` in the server.py terminal
+2. Stop the HTML server: `Ctrl+C`
+3. Stop the agent: `Ctrl+C`
+4. Stop the MCP server: `Ctrl+C`
