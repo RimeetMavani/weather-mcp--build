@@ -79,11 +79,12 @@ cd weather-mcp--build
 pip install -r requirements.txt
 ```
 
-### 2. (Optional) Configure API keys
+### 2. Configure API keys
 
 ```bash
 copy .env.example .env
-# Edit .env and add your free API keys
+# Edit .env — add GROQ_API_KEY (free tier, required for LLM inbox)
+# Optionally add free weather API keys for tools 4–5
 ```
 
 ### 3. Start the MCP server (SSE on port 8000)
@@ -98,23 +99,33 @@ You should see output like:
 Starting MCP server 'Weather MCP Server' with transport 'sse' on http://127.0.0.1:8000/sse
 ```
 
-**Keep this terminal open.** Press `Ctrl+C` when you are done testing to stop the MCP server.
+**Keep this terminal open.**
 
-### 4. Serve the HTML test page (port 8080)
+### 4. Start the LLM agent (port 8001)
 
 Open a **second terminal**:
+
+```bash
+python agent.py
+```
+
+The agent lists MCP tools, lets the LLM pick one for your question, calls the tool, and returns an HTML answer.
+
+### 5. Serve the HTML inbox UI (port 8080)
+
+Open a **third terminal**:
 
 ```bash
 python -m http.server 8080
 ```
 
-### 5. Open the browser UI
+### 6. Open the browser UI
 
 Go to: **http://localhost:8080/index.html**
 
-1. Click **Connect to MCP Server**
-2. Click any of the **5 suggested test prompts**, or enter a city and pick a tool
-3. View the **HTML-formatted** weather result
+1. Wait for status dots to turn green (agent, MCP, LLM)
+2. Type a weather question in the **inbox** (no tool dropdown — the LLM chooses)
+3. View the **HTML-formatted** LLM response
 
 ---
 
@@ -146,11 +157,12 @@ This connects via SSE, lists tools, calls all 5 with live data, prints previews,
 
 | File | Purpose |
 |------|---------|
-| `server.py` | MCP server — 5 tools, SSE transport, CORS for browser |
-| `index.html` | Browser UI with MCP JS SDK + 5 clickable test prompts |
+| `server.py` | MCP server — 5 weather tools, SSE transport |
+| `agent.py` | LLM agent — picks MCP tool, returns HTML answer |
+| `index.html` | Inbox UI — ask weather questions, no manual tool select |
 | `test_client.py` | Python script to test all 5 tools from the terminal |
 | `requirements.txt` | Python dependencies |
-| `.env.example` | Template for free API keys |
+| `.env.example` | Template for API keys (Groq + optional weather keys) |
 
 ---
 

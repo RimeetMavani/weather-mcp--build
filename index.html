@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Weather MCP Tester</title>
+  <title>Weather MCP — LLM Inbox</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -66,9 +66,15 @@
 
     .status {
       display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      font-size: 0.9rem;
+    }
+
+    .status-item {
+      display: flex;
       align-items: center;
       gap: 0.5rem;
-      font-size: 0.9rem;
     }
 
     .dot {
@@ -78,10 +84,10 @@
       background: var(--error);
     }
 
-    .dot.connected { background: var(--success); }
+    .dot.ok { background: var(--success); }
 
     .prompts {
-      display: flex;  
+      display: flex;
       flex-direction: column;
       gap: 0.5rem;
     }
@@ -98,9 +104,14 @@
       font-size: 0.95rem;
     }
 
-    .prompt-btn:hover {
+    .prompt-btn:hover:not(:disabled) {
       border-color: var(--accent);
       background: #1e293b;
+    }
+
+    .prompt-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
 
     .prompt-btn small {
@@ -110,15 +121,15 @@
       font-size: 0.8rem;
     }
 
-    .form-row {
+    .inbox-row {
       display: flex;
       gap: 0.75rem;
       flex-wrap: wrap;
     }
 
-    input, select {
+    #questionInput {
       flex: 1;
-      min-width: 160px;
+      min-width: 200px;
       padding: 0.75rem 1rem;
       border-radius: 8px;
       border: 1px solid var(--border);
@@ -139,8 +150,14 @@
       transition: background 0.2s;
     }
 
-    button.primary:hover { background: var(--accent-hover); }
+    button.primary:hover:not(:disabled) { background: var(--accent-hover); }
     button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .hint {
+      margin: 0.75rem 0 0;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
 
     #output {
       min-height: 120px;
@@ -155,7 +172,12 @@
       color: var(--accent);
     }
 
-    /* Styles for MCP tool HTML responses */
+    #output .meta {
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+
     #output .weather-card {
       background: #0f172a;
       border: 1px solid var(--border);
@@ -225,196 +247,196 @@
 <body>
   <div class="container">
     <header>
-      <h1>Weather MCP Tester</h1>
-      <p>Connects to <code>http://127.0.0.1:8000/sse</code> via MCP JavaScript SDK</p>
+      <h1>Weather MCP Inbox</h1>
+      <p>Ask a weather question — the LLM picks the MCP tool and returns an HTML answer</p>
     </header>
 
     <div class="panel">
-      <h2>Connection</h2>
+      <h2>System Status</h2>
       <div class="status">
-        <span class="dot" id="statusDot"></span>
-        <span id="statusText">Disconnected — start server.py first</span>
-      </div>
-      <div style="margin-top: 1rem;">
-        <button class="primary" id="connectBtn">Connect to MCP Server</button>
+        <div class="status-item">
+          <span class="dot" id="agentDot"></span>
+          <span id="agentStatus">Checking agent…</span>
+        </div>
+        <div class="status-item">
+          <span class="dot" id="mcpDot"></span>
+          <span id="mcpStatus">Checking MCP…</span>
+        </div>
+        <div class="status-item">
+          <span class="dot" id="llmDot"></span>
+          <span id="llmStatus">Checking LLM…</span>
+        </div>
       </div>
     </div>
 
     <div class="panel">
-      <h2>Suggested Test Prompts (click to run)</h2>
+      <h2>Suggested Questions (LLM chooses the tool)</h2>
       <div class="prompts" id="promptList"></div>
     </div>
 
     <div class="panel">
-      <h2>Custom Query</h2>
-      <div class="form-row">
-        <input type="text" id="cityInput" placeholder="Enter city name (e.g. Mumbai)" value="London" />
-        <select id="toolSelect">
-          <option value="weather_open_meteo">Open-Meteo (no key)</option>
-          <option value="weather_wttr">wttr.in (no key)</option>
-          <option value="weather_7timer">7Timer! (no key)</option>
-          <option value="weather_openweather">OpenWeatherMap (key)</option>
-          <option value="weather_weatherapi">WeatherAPI.com (key)</option>
-        </select>
-        <button class="primary" id="callBtn" disabled>Call Tool</button>
+      <h2>Weather Inbox</h2>
+      <div class="inbox-row">
+        <input
+          type="text"
+          id="questionInput"
+          placeholder="e.g. What's the weather in Mumbai right now?"
+          value=""
+        />
+        <button class="primary" id="askBtn" disabled>Ask</button>
       </div>
+      <p class="hint">No tool dropdown — the LLM reads your question, lists MCP tools, picks one, and formats the reply as HTML.</p>
     </div>
 
     <div class="panel">
-      <h2>Result (HTML output from MCP)</h2>
-      <div id="output"><p class="placeholder">Results will appear here after calling a tool.</p></div>
+      <h2>LLM Response (HTML)</h2>
+      <div id="output"><p class="placeholder">Ask a weather question to see the HTML answer here.</p></div>
     </div>
 
     <footer>
-      5 tools · 5 live weather APIs · SSE transport · Press Ctrl+C in the server terminal to stop MCP
+      MCP server :8000 · Agent :8001 · Start both before asking questions
     </footer>
   </div>
 
   <script type="module">
-    import { Client } from "https://esm.sh/@modelcontextprotocol/sdk@1.12.1/client/index.js";
-    import { SSEClientTransport } from "https://esm.sh/@modelcontextprotocol/sdk@1.12.1/client/sse.js";
+    const AGENT_URL = "http://127.0.0.1:8001";
 
-    const MCP_URL = "http://127.0.0.1:8000/sse";
-
-    const TEST_PROMPTS = [
+    const SUGGESTED_QUESTIONS = [
       {
-        label: "London weather via Open-Meteo",
-        tool: "weather_open_meteo",
-        city: "London",
-        api: "api.open-meteo.com (no key)",
+        label: "What's the weather in London?",
+        hint: "LLM will pick Open-Meteo or wttr.in",
       },
       {
-        label: "Tokyo temperature via wttr.in",
-        tool: "weather_wttr",
-        city: "Tokyo",
-        api: "wttr.in (no key)",
+        label: "How hot is it in Tokyo right now?",
+        hint: "LLM will pick a temperature-focused tool",
       },
       {
-        label: "Paris astronomical forecast via 7Timer!",
-        tool: "weather_7timer",
-        city: "Paris",
-        api: "7timer.info (no key)",
+        label: "Is it good stargazing weather in Paris tonight?",
+        hint: "LLM should choose 7Timer!",
       },
       {
-        label: "New York weather via OpenWeatherMap",
-        tool: "weather_openweather",
-        city: "New York",
-        api: "openweathermap.org (free key)",
+        label: "Tell me about the weather in New York",
+        hint: "LLM may choose OpenWeatherMap if key is set",
       },
       {
-        label: "Sydney weather via WeatherAPI.com",
-        tool: "weather_weatherapi",
-        city: "Sydney",
-        api: "weatherapi.com (free key)",
+        label: "What's the humidity and wind like in Sydney?",
+        hint: "LLM will pick the best matching tool",
       },
     ];
 
-    let client = null;
-    let transport = null;
-
-    const statusDot = document.getElementById("statusDot");
-    const statusText = document.getElementById("statusText");
-    const connectBtn = document.getElementById("connectBtn");
-    const callBtn = document.getElementById("callBtn");
-    const cityInput = document.getElementById("cityInput");
-    const toolSelect = document.getElementById("toolSelect");
+    const agentDot = document.getElementById("agentDot");
+    const agentStatus = document.getElementById("agentStatus");
+    const mcpDot = document.getElementById("mcpDot");
+    const mcpStatus = document.getElementById("mcpStatus");
+    const llmDot = document.getElementById("llmDot");
+    const llmStatus = document.getElementById("llmStatus");
+    const questionInput = document.getElementById("questionInput");
+    const askBtn = document.getElementById("askBtn");
     const output = document.getElementById("output");
     const promptList = document.getElementById("promptList");
 
-    function setConnected(connected) {
-      statusDot.classList.toggle("connected", connected);
-      statusText.textContent = connected
-        ? "Connected to MCP server"
-        : "Disconnected — start server.py first";
-      connectBtn.textContent = connected ? "Disconnect" : "Connect to MCP Server";
-      callBtn.disabled = !connected;
+    let systemReady = false;
+
+    function setReady(ready) {
+      systemReady = ready;
+      askBtn.disabled = !ready;
+      document.querySelectorAll(".prompt-btn").forEach((btn) => {
+        btn.disabled = !ready;
+      });
     }
 
     function showLoading(message) {
       output.innerHTML = `<p class="loading">${message}</p>`;
     }
 
-    function extractHtml(result) {
-      if (result.content && result.content.length > 0) {
-        const part = result.content[0];
-        if (part.type === "text") return part.text;
+    async function checkHealth() {
+      try {
+        const res = await fetch(`${AGENT_URL}/health`);
+        const data = await res.json();
+
+        agentDot.classList.toggle("ok", true);
+        agentStatus.textContent = "Agent online";
+
+        mcpDot.classList.toggle("ok", data.mcp_connected);
+        mcpStatus.textContent = data.mcp_connected
+          ? `MCP connected (${data.mcp_tools} tools)`
+          : "MCP offline — run python server.py";
+
+        llmDot.classList.toggle("ok", data.llm_configured);
+        llmStatus.textContent = data.llm_configured
+          ? `Groq ready (${data.model})`
+          : "LLM key missing — set GROQ_API_KEY in .env";
+
+        setReady(data.mcp_connected && data.llm_configured);
+      } catch {
+        agentDot.classList.remove("ok");
+        agentStatus.textContent = "Agent offline — run python agent.py on port 8001";
+        mcpDot.classList.remove("ok");
+        mcpStatus.textContent = "MCP unknown";
+        llmDot.classList.remove("ok");
+        llmStatus.textContent = "LLM unknown";
+        setReady(false);
       }
-      return "<p>No content returned.</p>";
     }
 
-    async function callTool(toolName, city) {
-      if (!client) {
-        output.innerHTML = '<p class="placeholder">Connect to the MCP server first.</p>';
+    async function askQuestion(question) {
+      const q = question.trim();
+      if (!q) {
+        output.innerHTML = '<div class="weather-card error"><p>Please enter a weather question.</p></div>';
         return;
       }
 
-      showLoading(`Calling <strong>${toolName}</strong> for <strong>${city}</strong>…`);
+      if (!systemReady) {
+        output.innerHTML = '<div class="weather-card error"><p>Start server.py and agent.py, and set GROQ_API_KEY in .env.</p></div>';
+        return;
+      }
+
+      askBtn.disabled = true;
+      showLoading("LLM is choosing an MCP tool and fetching live weather…");
 
       try {
-        const result = await client.callTool({
-          name: toolName,
-          arguments: { city },
+        const res = await fetch(`${AGENT_URL}/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: q }),
         });
 
-        if (result.isError) {
-          output.innerHTML = `<div class="weather-card error"><p>Error from tool.</p><pre>${JSON.stringify(result, null, 2)}</pre></div>`;
-          return;
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(errText || `HTTP ${res.status}`);
         }
 
-        output.innerHTML = extractHtml(result);
+        const data = await res.json();
+        const toolNote = data.tool_used
+          ? `<p class="meta">MCP tool chosen by LLM: <strong>${data.tool_used}</strong></p>`
+          : "";
+
+        output.innerHTML = toolNote + (data.html || "<p>No HTML returned.</p>");
       } catch (err) {
-        output.innerHTML = `<div class="weather-card error"><h3>Request Failed</h3><p>${err.message}</p></div>`;
+        output.innerHTML = `<div class="weather-card error"><h3>Request Failed</h3><p>${err.message}</p><p>Make sure <code>python agent.py</code> and <code>python server.py</code> are running.</p></div>`;
+      } finally {
+        askBtn.disabled = !systemReady;
       }
     }
 
-    async function connect() {
-      if (client) {
-        try {
-          await client.close();
-        } catch (_) { /* ignore */ }
-        client = null;
-        transport = null;
-        setConnected(false);
-        return;
-      }
-
-      try {
-        showLoading("Connecting to MCP server…");
-        client = new Client({ name: "weather-web-client", version: "1.0.0" });
-        transport = new SSEClientTransport(new URL(MCP_URL));
-        await client.connect(transport);
-        setConnected(true);
-        output.innerHTML = '<p class="placeholder">Connected! Click a test prompt or enter a city and call a tool.</p>';
-      } catch (err) {
-        client = null;
-        transport = null;
-        setConnected(false);
-        output.innerHTML = `<div class="weather-card error"><h3>Connection Failed</h3><p>${err.message}</p><p>Make sure <code>python server.py</code> is running on port 8000.</p></div>`;
-      }
-    }
-
-    TEST_PROMPTS.forEach((prompt) => {
+    SUGGESTED_QUESTIONS.forEach((item) => {
       const btn = document.createElement("button");
       btn.className = "prompt-btn";
-      btn.innerHTML = `${prompt.label}<small>Tool: ${prompt.tool} · API: ${prompt.api}</small>`;
+      btn.innerHTML = `${item.label}<small>${item.hint}</small>`;
       btn.addEventListener("click", () => {
-        cityInput.value = prompt.city;
-        toolSelect.value = prompt.tool;
-        callTool(prompt.tool, prompt.city);
+        questionInput.value = item.label;
+        askQuestion(item.label);
       });
       promptList.appendChild(btn);
     });
 
-    connectBtn.addEventListener("click", connect);
-    callBtn.addEventListener("click", () => {
-      const city = cityInput.value.trim();
-      const tool = toolSelect.value;
-      if (!city) {
-        output.innerHTML = '<div class="weather-card error"><p>Please enter a city name.</p></div>';
-        return;
-      }
-      callTool(tool, city);
+    askBtn.addEventListener("click", () => askQuestion(questionInput.value));
+    questionInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") askQuestion(questionInput.value);
     });
+
+    checkHealth();
+    setInterval(checkHealth, 15000);
   </script>
 </body>
 </html>
