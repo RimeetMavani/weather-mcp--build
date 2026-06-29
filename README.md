@@ -1,6 +1,6 @@
 # Weather MCP Server
 
-A simple **Model Context Protocol (MCP)** server built with [fastmcp](https://gofastmcp.com) that exposes **exactly 5 weather tools**, each calling a different **live public weather API**. Includes a browser-based test UI that connects over **SSE** transport.
+A **Model Context Protocol (MCP)** server built with [fastmcp](https://gofastmcp.com) that exposes **exactly 5 weather tools**, each calling a different **live public weather API**. Includes a **Groq-powered LLM agent** and a browser **inbox UI** — you ask a weather question in plain English, the LLM picks the right MCP tool, and returns an HTML answer.
 
 ---
 
@@ -9,21 +9,26 @@ A simple **Model Context Protocol (MCP)** server built with [fastmcp](https://go
 ```mermaid
 flowchart TB
     subgraph Browser["Browser (port 8080)"]
-        UI[index.html]
-        SDK[MCP JavaScript SDK]
-        UI --> SDK
+        UI[index.html — LLM Inbox]
+    end
+
+    subgraph Agent["LLM Agent (port 8001)"]
+        API["/chat · /health"]
+        GROQ[Groq LLM]
+        MCPClient[MCP Client]
+        API --> GROQ
+        API --> MCPClient
+        GROQ -->|pick tool + format HTML| API
     end
 
     subgraph MCP["MCP Server (port 8000)"]
         SSE[SSE Endpoint /sse]
-        MSG[Messages /messages/]
         T1[weather_open_meteo]
         T2[weather_wttr]
         T3[weather_7timer]
         T4[weather_openweather]
         T5[weather_weatherapi]
         SSE --> T1 & T2 & T3 & T4 & T5
-        MSG --> SSE
     end
 
     subgraph APIs["Live Weather APIs"]
@@ -34,15 +39,15 @@ flowchart TB
         A5[WeatherAPI.com\nfree key]
     end
 
-    SDK -->|SSE GET /sse| SSE
-    SDK -->|POST /messages/| MSG
+    UI -->|POST /chat| API
+    MCPClient -->|SSE| SSE
     T1 --> A1
     T2 --> A2
     T3 --> A3
     T4 --> A4
     T5 --> A5
-    T1 & T2 & T3 & T4 & T5 -->|HTML response| SDK
-    SDK --> UI
+    T1 & T2 & T3 & T4 & T5 -->|HTML| MCPClient
+    API -->|HTML response| UI
 ```
 
 ---
@@ -57,15 +62,19 @@ flowchart TB
 | 4 | `weather_openweather` | [OpenWeatherMap](https://openweathermap.org/api) | Yes (free tier) |
 | 5 | `weather_weatherapi` | [WeatherAPI.com](https://www.weatherapi.com/) | Yes (free tier) |
 
-### Free API Keys (optional)
+### API Keys
 
-Tools 1–3 work immediately with no setup. For tools 4–5:
+| Key | Required for | Sign up |
+|-----|--------------|---------|
+| `GROQ_API_KEY` | LLM inbox UI (`agent.py`) | https://console.groq.com/keys (free tier) |
+| `OPENWEATHER_API_KEY` | Tool 4 only (optional) | https://openweathermap.org/api |
+| `WEATHERAPI_KEY` | Tool 5 only (optional) | https://www.weatherapi.com/signup.aspx |
+
+Tools 1–3 work with no keys. For the inbox UI, **Groq is required**. Weather keys for tools 4–5 are optional — the LLM will pick from whichever tools are available.
 
 1. Copy `.env.example` to `.env`
-2. Register for free keys:
-   - **OpenWeatherMap**: https://openweathermap.org/api (1,000 calls/day)
-   - **WeatherAPI.com**: https://www.weatherapi.com/signup.aspx (1M calls/month)
-3. Paste keys into `.env`
+2. Add your `GROQ_API_KEY` (required for inbox)
+3. Optionally add weather API keys for tools 4–5
 
 ---
 
@@ -109,7 +118,7 @@ Open a **second terminal**:
 python agent.py
 ```
 
-The agent lists MCP tools, lets the LLM pick one for your question, calls the tool, and returns an HTML answer.
+The agent lists MCP tools, lets the Groq LLM pick one for your question, calls the tool, and returns an HTML answer.
 
 ### 5. Serve the HTML inbox UI (port 8080)
 
@@ -129,15 +138,17 @@ Go to: **http://localhost:8080/index.html**
 
 ---
 
-## 5 Suggested Test Prompts
+## 5 Suggested Inbox Questions
 
-| Prompt | Tool | City |
-|--------|------|------|
-| London weather via Open-Meteo | `weather_open_meteo` | London |
-| Tokyo temperature via wttr.in | `weather_wttr` | Tokyo |
-| Paris astronomical forecast via 7Timer! | `weather_7timer` | Paris |
-| New York weather via OpenWeatherMap | `weather_openweather` | New York |
-| Sydney weather via WeatherAPI.com | `weather_weatherapi` | Sydney |
+These match the clickable prompts in `index.html`. The LLM picks the tool — you do not select one manually.
+
+| Question | Expected tool (LLM may vary) |
+|----------|------------------------------|
+| What's the weather in London? | Open-Meteo or wttr.in |
+| How hot is it in Tokyo right now? | Temperature-focused tool |
+| Is it good stargazing weather in Paris tonight? | 7Timer! |
+| Tell me about the weather in New York | OpenWeatherMap (if key set) |
+| What's the humidity and wind like in Sydney? | Best matching tool |
 
 ---
 
@@ -149,7 +160,7 @@ With `server.py` running in another terminal:
 python test_client.py
 ```
 
-This connects via SSE, lists tools, calls all 5 with live data, prints previews, then closes the connection.
+This connects via SSE, lists tools, calls all 5 with live data, prints previews, then closes the connection. This tests the MCP server directly — no Groq agent needed.
 
 ---
 
@@ -158,9 +169,9 @@ This connects via SSE, lists tools, calls all 5 with live data, prints previews,
 | File | Purpose |
 |------|---------|
 | `server.py` | MCP server — 5 weather tools, SSE transport |
-| `agent.py` | LLM agent — picks MCP tool, returns HTML answer |
-| `index.html` | Inbox UI — ask weather questions, no manual tool select |
-| `test_client.py` | Python script to test all 5 tools from the terminal |
+| `agent.py` | Groq LLM agent — picks MCP tool, returns HTML answer |
+| `index.html` | Inbox UI — ask weather questions via agent on port 8001 |
+| `test_client.py` | Python script to test all 5 MCP tools from the terminal |
 | `requirements.txt` | Python dependencies |
 | `.env.example` | Template for API keys (Groq + optional weather keys) |
 
@@ -170,4 +181,5 @@ This connects via SSE, lists tools, calls all 5 with live data, prints previews,
 
 1. Close the browser tab
 2. Stop the HTML server: `Ctrl+C` in the http.server terminal
-3. Stop the MCP server: `Ctrl+C` in the server.py terminal
+3. Stop the agent: `Ctrl+C` in the agent.py terminal
+4. Stop the MCP server: `Ctrl+C` in the server.py terminal
